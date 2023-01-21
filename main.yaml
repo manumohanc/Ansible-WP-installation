@@ -1,0 +1,135 @@
+---
+- name: "Installing Wordpress on Amazon Linux Machine"
+  hosts: amazon
+  become: true
+  vars_files:
+    - main.vars
+  tasks:
+
+    - name: "Installing packages"
+      yum:
+        name: "{{packages}}"
+        state: present
+
+    - name: " Installing php"
+      shell: amazon-linux-extras install php7.4 -y
+
+    - name: " Creating httpd config file"
+      template:
+        src: httpd.conf.tmpl
+        dest: /etc/httpd/conf/httpd.conf
+        owner: "{{ httpd_owner }}"
+        group: "{{ httpd_group }}"
+
+    - name: " Creating httpd vhost file"
+      template:
+        src: vhost.tmpl
+        dest: /etc/httpd/conf.d/default.conf
+        owner: "{{ httpd_owner }}"
+        group: "{{ httpd_group }}"
+
+    - name: "Creating Document root"
+      file:
+        path: "/var/www/html/{{httpd_domain}}"
+        state: directory
+        owner: "{{ httpd_owner }}"
+        group: "{{ httpd_group }}"
+
+    - name: "Copy test pages into Document root"
+      copy:
+        src: "{{ item }}"
+        dest: "/var/www/html/{{httpd_domain}}"
+        owner: "{{ httpd_owner }}"
+        group: "{{ httpd_group }}"
+      with_items:
+          - test.html
+          - test.php
+
+    - name: " Apache conf syntax check"
+      ignore_errors: true
+      shell: httpd -t
+      register: status
+
+    - name: "Restarting and enabling services"
+      when: status.stderr == "Syntax OK"
+      service:
+        name: "{{item}}"
+        state: restarted
+        enabled: true
+      with_items:
+          - "httpd"
+          - "mariadb"
+          - "php-fpm"
+
+    - name: " Setting mysql root password"
+      template:
+        src: root.cnf.tmpl
+        dest: /root/my.cnf
+        mode: 400
+
+    - name: "Removing unwanted users in database"
+      mysql_user:
+        user: ""
+        host_all: true
+        state: absent
+
+    - name: "Removing test databases"
+      mysql_db:
+        name: "test"
+        state: absent
+
+    - name: "Creating database for Wordpress"
+      mysql_db:
+        name: "{{ mysql_extra_database }}"
+        state: present
+
+    - name: "Creating database user for Wordpress"
+      mysql_user:
+        user: "{{mysql_extra_user}}"
+        host: "%"
+        password: "{{mysql_extra_user_password}}"
+        priv: '{{mysql_extra_database}}.*:ALL'
+        state: present
+
+    - name: "Downloading Wordpress"
+      get_url:
+        url: "{{wp_url}}"
+        dest: /tmp/wordpress.tar.gz
+
+    - name: "Extracting Wordpress"
+      unarchive:
+        src: /tmp/wordpress.tar.gz
+        dest: /tmp/
+        remote_src: true
+
+    - name: "Copying Wordpress files to Documnet root"
+      copy:
+        src: /tmp/wordpress/
+        dest: "/var/www/html/{{httpd_domain}}"
+        owner: "{{ httpd_owner }}"
+        group: "{{ httpd_group }}"
+        remote_src: true
+
+    - name: "Creating wp-config.php"
+      template:
+        src: wp-config.php.tmpl
+        dest: "/var/www/html/{{httpd_domain}}/wp-config.php"
+        owner: "{{ httpd_owner }}"
+        group: "{{ httpd_group }}"
+
+    - name: "Post-installation restart"
+      service:
+        name: "{{item}}"
+        state: restarted
+      with_items:
+        - "mariadb"
+        - "httpd"
+        - "php-fpm"
+
+    - name: "Post-Installation Cleanup"
+      file:
+        path: "{{item}}"
+        state: absent
+      with_items:
+        - "/tmp/wordpress.tar.gz"
+        - "/tmp/wordpress/"
