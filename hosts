@@ -1,5 +1,2 @@
 [amazon]
-172.31.39.203 ansible_user="ec2-user" ansible_port=22 ansible_ssh_private_key_file="key.pem"
-
-[ubuntu]
-172.31.43.32 ansible_user="ubuntu" ansible_port=22 ansible_ssh_private_key_file="key.pem"
+<IP address> ansible_user="ec2-user" ansible_port=22 ansible_ssh_private_key_file="key.pem"
